@@ -1717,6 +1717,17 @@ jobs:
           curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "${MANAGER_ARTIFACT}.zip" "$artifact_url"
           unzip -j "${MANAGER_ARTIFACT}.zip" "*.apk" -d ./AnyKernel3/
 
+      - name: Free Kernel Workspace Before Spoofed Manager
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' && !startsWith(github.event.inputs.ZRAM, '1/') }}
+        run: |
+          set -euo pipefail
+          echo "Disk usage before manager cleanup:"
+          df -h
+          du -sh "$GITHUB_WORKSPACE/kernel_workspace" 2>/dev/null || true
+          rm -rf "$GITHUB_WORKSPACE/kernel_workspace" "$GITHUB_WORKSPACE/.repo" /tmp/sukisu
+          echo "Disk usage after manager cleanup:"
+          df -h
+
       - name: Setup Java for Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         uses: actions/setup-java@v5

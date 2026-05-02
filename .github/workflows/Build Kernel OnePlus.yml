@@ -1843,6 +1843,25 @@ jobs:
 
           ./gradlew clean assembleRelease
 
+          if [[ ! -d "$ANDROID_HOME/ndk" ]]; then
+            echo "Android NDK was not installed under ANDROID_HOME=$ANDROID_HOME." >&2
+            exit 1
+          fi
+          ANDROID_NDK_HOME="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if [[ -z "$ANDROID_NDK_HOME" ]]; then
+            echo "Unable to locate an Android NDK under $ANDROID_HOME/ndk." >&2
+            exit 1
+          fi
+          STRIP_BIN="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -type f -name llvm-strip | head -n 1)"
+          if [[ -z "$STRIP_BIN" ]]; then
+            echo "Unable to locate llvm-strip under Android NDK: $ANDROID_NDK_HOME" >&2
+            exit 1
+          fi
+          export ANDROID_NDK_HOME
+          export ANDROID_NDK="$ANDROID_NDK_HOME"
+          export PATH="$(dirname "$STRIP_BIN"):$PATH"
+          echo "Using Android NDK strip: $STRIP_BIN"
+
           cd "$SUKISU_DIR"
           run_id="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
           if [[ -z "$run_id" || "$run_id" == "null" ]]; then

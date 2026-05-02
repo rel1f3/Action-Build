@@ -1701,10 +1701,16 @@ jobs:
             echo "Unable to locate an Android NDK under $ANDROID_HOME/ndk." >&2
             exit 1
           fi
-          STRIP_BIN="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -type f -name llvm-strip | head -n 1)"
+          STRIP_BIN="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" \( -type f -o -type l \) -name llvm-strip | head -n 1)"
           if [[ -z "$STRIP_BIN" ]]; then
-            echo "Unable to locate llvm-strip under Android NDK: $ANDROID_NDK_HOME" >&2
-            exit 1
+            OBJCOPY_BIN="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" \( -type f -o -type l \) -name llvm-objcopy | head -n 1)"
+            if [[ -z "$OBJCOPY_BIN" ]]; then
+              echo "Unable to locate llvm-strip or llvm-objcopy under Android NDK: $ANDROID_NDK_HOME" >&2
+              exit 1
+            fi
+            mkdir -p "$GITHUB_WORKSPACE/.android-tools"
+            ln -sf "$OBJCOPY_BIN" "$GITHUB_WORKSPACE/.android-tools/llvm-strip"
+            STRIP_BIN="$GITHUB_WORKSPACE/.android-tools/llvm-strip"
           fi
           export ANDROID_NDK_HOME
           export ANDROID_NDK="$ANDROID_NDK_HOME"

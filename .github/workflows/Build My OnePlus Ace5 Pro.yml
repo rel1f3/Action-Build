@@ -1,0 +1,78 @@
+name: Build My OnePlus Ace5 Pro
+
+run-name: Build OnePlus Ace5 Pro (${{ github.event.inputs.MANAGER_SOURCE }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANAGER_SOURCE:
+        type: choice
+        description: "管理器调用方向"
+        required: true
+        default: MIUIX_SPOOF
+        options:
+          - MIUIX
+          - MIUIX_SPOOF
+          - MD3
+          - MD3_SPOOF
+      SPOOF_PKG_NAME:
+        type: string
+        description: "自定义伪装管理器包名(仅 MIUIX_SPOOF 使用，留空或-1关闭)"
+        required: false
+        default: "com.yek.android.kfc.activitys"
+      SUFFIX:
+        type: string
+        description: "自定义内核后缀(留空使用主工作流默认行为，-1关闭)"
+        required: false
+        default: ""
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch Ace5 Pro Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Main OnePlus Workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_WORKFLOW: Build Kernel OnePlus.yml
+          TARGET_REF: ${{ github.ref_name }}
+          MANAGER_SOURCE: ${{ github.event.inputs.MANAGER_SOURCE }}
+          SPOOF_PKG_NAME: ${{ github.event.inputs.SPOOF_PKG_NAME }}
+          SUFFIX: ${{ github.event.inputs.SUFFIX }}
+        run: |
+          set -euo pipefail
+
+          echo "Dispatching $TARGET_WORKFLOW on ref $TARGET_REF for oneplus_ace5_pro_b"
+
+          gh workflow run "$TARGET_WORKFLOW" \
+            --ref "$TARGET_REF" \
+            -f FILE="oneplus_ace5_pro_b" \
+            -f MANAGER_SOURCE="$MANAGER_SOURCE" \
+            -f SPOOF_PKG_NAME="$SPOOF_PKG_NAME" \
+            -f SUSFS_CI="N/A" \
+            -f KPM="KPM" \
+            -f SUSFS_META="" \
+            -f DYNAMIC_REPO="Numbersf" \
+            -f BUILD_TIME="Fri Dec 12 11:37:03 UTC 2025" \
+            -f KSU_META="builtin/Numbersf/" \
+            -f ZRAM="0/lz4kd/8589934592" \
+            -f SUFFIX="$SUFFIX" \
+            -f SUBLEVEL="" \
+            -f FAST_BUILD="true" \
+            -f LSM_BBG="false" \
+            -f NETFILTER="false" \
+            -f CCM="false" \
+            -f UNICODE_BYPASS="true" \
+            -f SCHED_HMBIRD="true" \
+            -f DROID_SPACES="false" \
+            -f RE_KERNEL="false" \
+            -f SUSFS_DEV="false" \
+            -f SPACE_NOCLEAN="false" \
+            -f BUILD_NOCCACHE="false"
+
+          echo "Main workflow dispatched. Open the Actions page to follow the actual kernel build run."

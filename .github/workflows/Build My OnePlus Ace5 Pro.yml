@@ -20,11 +20,21 @@ on:
         description: "自定义伪装管理器包名(仅 MIUIX_SPOOF 使用，留空或-1关闭)"
         required: false
         default: "com.yek.android.kfc.activitys"
+      BUILD_TIME:
+        type: string
+        description: "官方 boot 内核构建时间(用于 uname -a / proc/version)"
+        required: false
+        default: "Tue Jul  1 19:48:18 UTC 2025"
+      KERNEL_SUBLEVEL:
+        type: string
+        description: "内核小版本号(留空保持主工作流默认，C.15 官方为 66)"
+        required: false
+        default: "66"
       SUFFIX:
         type: string
-        description: "自定义内核后缀(留空使用主工作流默认行为，-1关闭)"
+        description: "自定义内核后缀(只填 android15-8- 后面的部分，-1关闭)"
         required: false
-        default: ""
+        default: "g29d86c5fc9dd-abogki428889875-4k"
 
 permissions:
   actions: write
@@ -43,6 +53,8 @@ jobs:
           TARGET_REF: ${{ github.ref_name }}
           MANAGER_SOURCE: ${{ github.event.inputs.MANAGER_SOURCE }}
           SPOOF_PKG_NAME: ${{ github.event.inputs.SPOOF_PKG_NAME }}
+          BUILD_TIME: ${{ github.event.inputs.BUILD_TIME }}
+          KERNEL_SUBLEVEL: ${{ github.event.inputs.KERNEL_SUBLEVEL }}
           SUFFIX: ${{ github.event.inputs.SUFFIX }}
         run: |
           set -euo pipefail
@@ -58,11 +70,11 @@ jobs:
             -f KPM="KPM" \
             -f SUSFS_META="e8d48c9" \
             -f DYNAMIC_REPO="Numbersf" \
-            -f BUILD_TIME="Fri Dec 12 11:37:03 UTC 2025" \
+            -f BUILD_TIME="$BUILD_TIME" \
             -f KSU_META="builtin/Numbersf/" \
             -f ZRAM="0/lz4kd/8589934592" \
             -f SUFFIX="$SUFFIX" \
-            -f SUBLEVEL="" \
+            -f SUBLEVEL="$KERNEL_SUBLEVEL" \
             -f FAST_BUILD="true" \
             -f LSM_BBG="false" \
             -f NETFILTER="false" \

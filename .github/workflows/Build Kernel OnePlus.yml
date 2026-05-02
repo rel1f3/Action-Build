@@ -1580,11 +1580,16 @@ jobs:
       - name: Setup Android SDK for Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         uses: android-actions/setup-android@v4
+        env:
+          ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       - name: Build Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
           set -euo pipefail
 

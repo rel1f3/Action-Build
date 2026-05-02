@@ -1724,7 +1724,13 @@ jobs:
           echo "Disk usage before manager cleanup:"
           df -h
           du -sh "$GITHUB_WORKSPACE/kernel_workspace" 2>/dev/null || true
-          rm -rf "$GITHUB_WORKSPACE/kernel_workspace" "$GITHUB_WORKSPACE/.repo" /tmp/sukisu
+          rm -rf \
+            "$GITHUB_WORKSPACE/kernel_workspace" \
+            "$GITHUB_WORKSPACE/.repo" \
+            "$GITHUB_WORKSPACE/.sukisu-manager" \
+            "$GITHUB_WORKSPACE/.gradle-spoof" \
+            "$GITHUB_WORKSPACE/android-sdk" \
+            /tmp/sukisu
           echo "Disk usage after manager cleanup:"
           df -h
 
@@ -1738,20 +1744,23 @@ jobs:
       - name: Setup Gradle for Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         uses: gradle/actions/setup-gradle@v6
+        env:
+          GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-spoof
 
       - name: Setup Android SDK for Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         uses: android-actions/setup-android@v4
         env:
-          ANDROID_HOME: ${{ runner.temp }}/android-sdk
-          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+          ANDROID_HOME: ${{ github.workspace }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
       - name: Build Spoofed Manager
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANDROID_HOME: ${{ runner.temp }}/android-sdk
-          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+          ANDROID_HOME: ${{ github.workspace }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+          GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-spoof
         run: |
           set -euo pipefail
 
@@ -1765,8 +1774,9 @@ jobs:
             exit 1
           fi
 
-          rm -rf /tmp/sukisu
-          git clone --depth=1 -b main https://github.com/SukiSU-Ultra/SukiSU-Ultra.git /tmp/sukisu
+          SUKISU_DIR="$GITHUB_WORKSPACE/.sukisu-manager"
+          rm -rf "$SUKISU_DIR"
+          git clone --depth=1 -b main https://github.com/SukiSU-Ultra/SukiSU-Ultra.git "$SUKISU_DIR"
 
           OLD_PKG="com.sukisu.ultra"
           OLD_PATH="com/sukisu/ultra"
@@ -1776,7 +1786,7 @@ jobs:
           NEW_JNI="${NEW_PKG//./_}"
           NEW_BASE="${NEW_PKG%.*}"
 
-          cd /tmp/sukisu/manager
+          cd "$SUKISU_DIR/manager"
 
           find . -depth -type d -path "*/$OLD_PATH" -print0 | while IFS= read -r -d '' d; do
             base="${d%/$OLD_PATH}"
@@ -1816,7 +1826,7 @@ jobs:
 
           ./gradlew clean assembleRelease
 
-          cd /tmp/sukisu
+          cd "$SUKISU_DIR"
           run_id="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
           if [[ -z "$run_id" || "$run_id" == "null" ]]; then
             echo "No successful SukiSU-Ultra build-manager run found on main." >&2
@@ -1850,11 +1860,11 @@ jobs:
             chmod +x "target/$target/release/ksud"
           done
 
-          APK_DIR="/tmp/sukisu/manager/app/build/outputs/apk/release"
+          APK_DIR="$SUKISU_DIR/manager/app/build/outputs/apk/release"
           mkdir -p "$APK_DIR"
           APK_PATH="$(find "$APK_DIR" -type f -name "*.apk" | head -n 1)"
           if [[ -z "$APK_PATH" ]]; then
-            APK_PATH="$(find /tmp/sukisu/manager -type f -path "*/build/outputs/apk/release/*.apk" | head -n 1)"
+            APK_PATH="$(find "$SUKISU_DIR/manager" -type f -path "*/build/outputs/apk/release/*.apk" | head -n 1)"
             if [[ -z "$APK_PATH" ]]; then
               echo "Gradle did not produce a release APK." >&2
               exit 1
@@ -1874,7 +1884,7 @@ jobs:
             -S "$SPOOF_KEY_PASSWORD" \
             --strip
 
-          DIST_APK="$(find /tmp/sukisu/dist -type f -name "*.apk" | head -n 1)"
+          DIST_APK="$(find "$SUKISU_DIR/dist" -type f -name "*.apk" | head -n 1)"
           if [[ -z "$DIST_APK" ]]; then
             echo "Repack did not produce a dist APK." >&2
             exit 1
@@ -1887,7 +1897,7 @@ jobs:
           fi
           "$AAPT_BIN" dump badging "$DIST_APK" | grep "package: name='$SPOOF_PKG_NAME'"
 
-          cp -v /tmp/sukisu/dist/*.apk "$GITHUB_WORKSPACE/AnyKernel3/"
+          cp -v "$SUKISU_DIR"/dist/*.apk "$GITHUB_WORKSPACE/AnyKernel3/"
 
       - name: Set zip Suffix
         id: suffix

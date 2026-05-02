@@ -828,24 +828,61 @@ jobs:
           SPOOF_KEY_PASSWORD="$(openssl rand -hex 24)"
 
           mkdir -p "$SPOOF_KEY_DIR"
-          keytool -genkeypair \
-            -alias "$SPOOF_KEY_ALIAS" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storetype JKS \
-            -keystore "$SPOOF_KEYSTORE" \
-            -storepass "$SPOOF_KEYSTORE_PASSWORD" \
-            -keypass "$SPOOF_KEY_PASSWORD" \
-            -dname "CN=SukiSU Spoof Manager, OU=Action-Build, O=Action-Build, L=Shanghai, ST=Shanghai, C=CN"
+          APK_SIGN_FILE="kernel_workspace/kernel_platform/KernelSU/kernel/manager/apk_sign.c"
+          EXISTING_CERT_SIZES=""
+          if [[ -f "$APK_SIGN_FILE" ]] && grep -q 'apk_sign_keys\[\]' "$APK_SIGN_FILE"; then
+            EXISTING_CERT_SIZES="$(python3 - "$APK_SIGN_FILE" <<'PY'
+          import re
+          import sys
 
-          keytool -exportcert \
-            -alias "$SPOOF_KEY_ALIAS" \
-            -keystore "$SPOOF_KEYSTORE" \
-            -storepass "$SPOOF_KEYSTORE_PASSWORD" \
-            -file "$SPOOF_CERT"
+          text = open(sys.argv[1], encoding="utf-8").read()
+          match = re.search(r"apk_sign_keys\[\]\s*=\s*\{(.*?)\};", text, re.S)
+          if match:
+              for size in re.findall(r"\{\s*(0x[0-9a-fA-F]+|\d+)\s*,", match.group(1)):
+                  print(int(size, 0))
+          PY
+          )"
+          fi
 
-          SPOOF_EXPECTED_SIZE="$(printf '0x%x' "$(stat -c%s "$SPOOF_CERT")")"
+          SPOOF_EXPECTED_SIZE=""
+          for attempt in $(seq 0 15); do
+            rm -f "$SPOOF_KEYSTORE" "$SPOOF_CERT"
+            DN_SUFFIX=""
+            if [[ "$attempt" != "0" ]]; then
+              DN_SUFFIX=" $attempt $(openssl rand -hex 2)"
+            fi
+
+            keytool -genkeypair \
+              -alias "$SPOOF_KEY_ALIAS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storetype JKS \
+              -keystore "$SPOOF_KEYSTORE" \
+              -storepass "$SPOOF_KEYSTORE_PASSWORD" \
+              -keypass "$SPOOF_KEY_PASSWORD" \
+              -dname "CN=SukiSU Spoof Manager${DN_SUFFIX}, OU=Action-Build, O=Action-Build, L=Shanghai, ST=Shanghai, C=CN"
+
+            keytool -exportcert \
+              -alias "$SPOOF_KEY_ALIAS" \
+              -keystore "$SPOOF_KEYSTORE" \
+              -storepass "$SPOOF_KEYSTORE_PASSWORD" \
+              -file "$SPOOF_CERT"
+
+            SIZE_DEC="$(stat -c%s "$SPOOF_CERT")"
+            if [[ -n "$EXISTING_CERT_SIZES" ]] && grep -qx "$SIZE_DEC" <<< "$EXISTING_CERT_SIZES"; then
+              echo "Generated spoof cert size $SIZE_DEC conflicts with builtin apk_sign_keys[], regenerating..."
+              continue
+            fi
+
+            SPOOF_EXPECTED_SIZE="$(printf '0x%x' "$SIZE_DEC")"
+            break
+          done
+
+          if [[ -z "$SPOOF_EXPECTED_SIZE" ]]; then
+            echo "Failed to generate a spoof certificate with a non-conflicting size." >&2
+            exit 1
+          fi
           SPOOF_EXPECTED_HASH="$(sha256sum "$SPOOF_CERT" | awk '{print $1}')"
 
           echo "::add-mask::$SPOOF_KEYSTORE_PASSWORD"
@@ -862,25 +899,50 @@ jobs:
 
           echo "Generated spoof cert: size=$SPOOF_EXPECTED_SIZE hash=$SPOOF_EXPECTED_HASH"
 
-      - name: Patch SukiSU Kbuild for Spoof Cert
+      - name: Patch SukiSU Manager Signature for Spoof Cert
         if: ${{ env.SPOOF_EXPECTED_SIZE != '' }}
         run: |
           set -euo pipefail
 
-          KBUILD_FILE="kernel_workspace/kernel_platform/KernelSU/kernel/Kbuild"
-          if [[ ! -f "$KBUILD_FILE" ]]; then
-            KBUILD_FILE="kernel_workspace/kernel_platform/KernelSU/kernel/Makefile"
-          fi
-          if [[ ! -f "$KBUILD_FILE" ]]; then
-            echo "Missing SukiSU Kbuild/Makefile for spoof cert patch" >&2
+          KSU_DIR="kernel_workspace/kernel_platform/KernelSU"
+          if [[ ! -d "$KSU_DIR/kernel" ]]; then
+            echo "Missing SukiSU kernel directory: $KSU_DIR/kernel" >&2
             exit 1
           fi
 
-          sed -i "1i KSU_EXPECTED_HASH2 := ${SPOOF_EXPECTED_HASH}" "$KBUILD_FILE"
-          sed -i "1i KSU_EXPECTED_SIZE2 := ${SPOOF_EXPECTED_SIZE}" "$KBUILD_FILE"
+          for build_file in "$KSU_DIR/kernel/Kbuild" "$KSU_DIR/kernel/Makefile"; do
+            if [[ -f "$build_file" ]] && grep -q 'KSU_EXPECTED_SIZE2' "$build_file"; then
+              sed -i "1i KSU_EXPECTED_HASH2 := ${SPOOF_EXPECTED_HASH}" "$build_file"
+              sed -i "1i KSU_EXPECTED_SIZE2 := ${SPOOF_EXPECTED_SIZE}" "$build_file"
 
-          echo "Patched $KBUILD_FILE with spoof cert:"
-          head -n 5 "$KBUILD_FILE"
+              echo "Patched $build_file with spoof cert through KSU_EXPECTED_SIZE2/KSU_EXPECTED_HASH2:"
+              head -n 8 "$build_file"
+              exit 0
+            fi
+          done
+
+          APK_SIGN_FILE="$KSU_DIR/kernel/manager/apk_sign.c"
+          if [[ ! -f "$APK_SIGN_FILE" ]]; then
+            echo "Missing SukiSU apk signature checker: $APK_SIGN_FILE" >&2
+            exit 1
+          fi
+
+          if ! grep -q 'apk_sign_keys\[\]' "$APK_SIGN_FILE"; then
+            echo "Cannot find apk_sign_keys[] in $APK_SIGN_FILE, and no KSU_EXPECTED_SIZE2 consumer exists." >&2
+            exit 1
+          fi
+
+          if ! grep -q "$SPOOF_EXPECTED_HASH" "$APK_SIGN_FILE"; then
+            sed -i "/apk_sign_keys\\[\\] = {/a\\    { ${SPOOF_EXPECTED_SIZE}, \"${SPOOF_EXPECTED_HASH}\" }, // Action-Build spoof manager" "$APK_SIGN_FILE"
+          fi
+
+          if ! grep -q "$SPOOF_EXPECTED_HASH" "$APK_SIGN_FILE"; then
+            echo "Failed to inject spoof cert into $APK_SIGN_FILE" >&2
+            exit 1
+          fi
+
+          echo "Patched $APK_SIGN_FILE with spoof cert in apk_sign_keys[]:"
+          grep -n "$SPOOF_EXPECTED_HASH" "$APK_SIGN_FILE"
 
       - name: Apply Patches SukiSU Ultra
         env:
@@ -1628,6 +1690,7 @@ jobs:
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
 
       - name: Download Latest SukiSU-Ultra APK from CI
+        if: ${{ github.event.inputs.MANAGER_SOURCE != 'MIUIX_SPOOF' || github.event.inputs.SPOOF_PKG_NAME == '' || github.event.inputs.SPOOF_PKG_NAME == '-1' }}
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

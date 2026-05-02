@@ -71,6 +71,11 @@ on:
           - MIUIX_SPOOF
           - MD3
           - MD3_SPOOF
+      SPOOF_PKG_NAME:
+        type: string
+        description: "自定义伪装管理器包名(留空或-1关闭)"
+        required: false
+        default: "com.yek.android.kfc.activitys"
       SUSFS_CI:
         type: choice
         description: "SUSFS模块下载调用方向"
@@ -795,6 +800,76 @@ jobs:
           grep -nE '^(REPO_OWNER|REPO_NAME|REPO_BRANCH|KSU_VERSION_API|KSU_VERSION_FULL|VERSION_TAG|GIT_BIN|CURL_BIN)' kernel/Makefile
           echo "::endgroup::"
 
+      - name: Generate Spoof Keystore
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
+        run: |
+          set -euo pipefail
+
+          SPOOF_PKG_NAME="${{ github.event.inputs.SPOOF_PKG_NAME }}"
+          if [[ ! "$SPOOF_PKG_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$ ]]; then
+            echo "Invalid SPOOF_PKG_NAME: $SPOOF_PKG_NAME" >&2
+            exit 1
+          fi
+
+          SPOOF_KEY_DIR="$RUNNER_TEMP/sukisu-spoof-signing"
+          SPOOF_KEYSTORE="$SPOOF_KEY_DIR/spoof-manager.jks"
+          SPOOF_CERT="$SPOOF_KEY_DIR/spoof-manager.der"
+          SPOOF_KEY_ALIAS="spoof-manager"
+          SPOOF_KEYSTORE_PASSWORD="$(openssl rand -hex 24)"
+          SPOOF_KEY_PASSWORD="$(openssl rand -hex 24)"
+
+          mkdir -p "$SPOOF_KEY_DIR"
+          keytool -genkeypair \
+            -alias "$SPOOF_KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storetype JKS \
+            -keystore "$SPOOF_KEYSTORE" \
+            -storepass "$SPOOF_KEYSTORE_PASSWORD" \
+            -keypass "$SPOOF_KEY_PASSWORD" \
+            -dname "CN=SukiSU Spoof Manager, OU=Action-Build, O=Action-Build, L=Shanghai, ST=Shanghai, C=CN"
+
+          keytool -exportcert \
+            -alias "$SPOOF_KEY_ALIAS" \
+            -keystore "$SPOOF_KEYSTORE" \
+            -storepass "$SPOOF_KEYSTORE_PASSWORD" \
+            -file "$SPOOF_CERT"
+
+          SPOOF_EXPECTED_SIZE="$(printf '0x%x' "$(stat -c%s "$SPOOF_CERT")")"
+          SPOOF_EXPECTED_HASH="$(sha256sum "$SPOOF_CERT" | awk '{print $1}')"
+
+          echo "::add-mask::$SPOOF_KEYSTORE_PASSWORD"
+          echo "::add-mask::$SPOOF_KEY_PASSWORD"
+          {
+            echo "SPOOF_PKG_NAME=$SPOOF_PKG_NAME"
+            echo "SPOOF_KEYSTORE=$SPOOF_KEYSTORE"
+            echo "SPOOF_KEY_ALIAS=$SPOOF_KEY_ALIAS"
+            echo "SPOOF_KEYSTORE_PASSWORD=$SPOOF_KEYSTORE_PASSWORD"
+            echo "SPOOF_KEY_PASSWORD=$SPOOF_KEY_PASSWORD"
+            echo "SPOOF_EXPECTED_SIZE=$SPOOF_EXPECTED_SIZE"
+            echo "SPOOF_EXPECTED_HASH=$SPOOF_EXPECTED_HASH"
+          } >> "$GITHUB_ENV"
+
+          echo "Generated spoof cert: size=$SPOOF_EXPECTED_SIZE hash=$SPOOF_EXPECTED_HASH"
+
+      - name: Patch SukiSU Kbuild for Spoof Cert
+        if: ${{ env.SPOOF_EXPECTED_SIZE != '' }}
+        run: |
+          set -euo pipefail
+
+          KBUILD_FILE="kernel_workspace/kernel_platform/KernelSU/kernel/Kbuild"
+          if [[ ! -f "$KBUILD_FILE" ]]; then
+            echo "Missing SukiSU Kbuild: $KBUILD_FILE" >&2
+            exit 1
+          fi
+
+          sed -i "1i KSU_EXPECTED_HASH2 := ${SPOOF_EXPECTED_HASH}" "$KBUILD_FILE"
+          sed -i "1i KSU_EXPECTED_SIZE2 := ${SPOOF_EXPECTED_SIZE}" "$KBUILD_FILE"
+
+          echo "Patched $KBUILD_FILE with spoof cert:"
+          head -n 5 "$KBUILD_FILE"
+
       - name: Apply Patches SukiSU Ultra
         env:
           FILE: ${{ github.event.inputs.FILE }}
@@ -1440,6 +1515,162 @@ jobs:
           echo "Downloading from: $artifact_url"
           curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "${MANAGER_ARTIFACT}.zip" "$artifact_url"
           unzip -j "${MANAGER_ARTIFACT}.zip" "*.apk" -d ./AnyKernel3/
+
+      - name: Setup Java for Spoofed Manager
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle for Spoofed Manager
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Android SDK for Spoofed Manager
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
+        uses: android-actions/setup-android@v4
+
+      - name: Build Spoofed Manager
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'MIUIX_SPOOF' && github.event.inputs.SPOOF_PKG_NAME != '' && github.event.inputs.SPOOF_PKG_NAME != '-1' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${SPOOF_EXPECTED_SIZE:-}" || -z "${SPOOF_EXPECTED_HASH:-}" ]]; then
+            echo "Spoof signing env is missing; Generate Spoof Keystore must run first." >&2
+            exit 1
+          fi
+
+          if [[ ! "$SPOOF_PKG_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$ ]]; then
+            echo "Invalid SPOOF_PKG_NAME: $SPOOF_PKG_NAME" >&2
+            exit 1
+          fi
+
+          rm -rf /tmp/sukisu
+          git clone --depth=1 -b main https://github.com/SukiSU-Ultra/SukiSU-Ultra.git /tmp/sukisu
+
+          OLD_PKG="com.sukisu.ultra"
+          OLD_PATH="com/sukisu/ultra"
+          OLD_JNI="com_sukisu_ultra"
+          NEW_PKG="$SPOOF_PKG_NAME"
+          NEW_PATH="${NEW_PKG//./\/}"
+          NEW_JNI="${NEW_PKG//./_}"
+          NEW_BASE="${NEW_PKG%.*}"
+
+          cd /tmp/sukisu/manager
+
+          find . -depth -type d -path "*/$OLD_PATH" -print0 | while IFS= read -r -d '' d; do
+            base="${d%/$OLD_PATH}"
+            mkdir -p "$base/$NEW_PATH"
+            shopt -s dotglob nullglob
+            mv "$d"/* "$base/$NEW_PATH"/ 2>/dev/null || true
+            rm -rf "$base/com/sukisu" 2>/dev/null || true
+          done
+
+          find . -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" \
+                            -o -name "*.gradle" -o -name "*.kts" -o -name "*.pro" \
+                            -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.hpp" \
+                            -o -name "CMakeLists.txt" -o -name "*.cmake" -o -name "*.properties" \) \
+            -exec sed -i \
+              -e "s|$OLD_PKG|$NEW_PKG|g" \
+              -e "s|$OLD_PATH|$NEW_PATH|g" \
+              -e "s|$OLD_JNI|$NEW_JNI|g" \
+              -e "s|io\\.sukisu\\.ultra|io.${NEW_PKG#*.}|g" \
+              -e "s|io/sukisu/ultra|io/${NEW_PATH#*/}|g" \
+              -e "s|io_sukisu_ultra|io_${NEW_JNI#*_}|g" \
+              -e "s|com\\.sukisu\\.zako|$NEW_BASE.zako|g" \
+              {} +
+
+          if grep -r "com\.sukisu\.ultra" --include="*.kt" --include="*.java" --include="*.xml" . | grep -v "// " | head -1; then
+            echo "Package rename left com.sukisu.ultra references behind." >&2
+            exit 1
+          fi
+          echo "Package rename complete: $NEW_PKG"
+
+          cp "$SPOOF_KEYSTORE" ./spoof-manager.jks
+          {
+            echo "KEYSTORE_PASSWORD=$SPOOF_KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$SPOOF_KEY_ALIAS"
+            echo "KEY_PASSWORD=$SPOOF_KEY_PASSWORD"
+            echo "KEYSTORE_FILE=spoof-manager.jks"
+          } >> gradle.properties
+
+          ./gradlew clean assembleRelease
+
+          cd /tmp/sukisu
+          run_id="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "No successful SukiSU-Ultra build-manager run found on main." >&2
+            exit 1
+          fi
+
+          declare -A KSUD_TARGETS=(
+            ["ksud-aarch64-linux-android"]="aarch64-linux-android"
+            ["ksud-armv7-linux-androideabi"]="armv7-linux-androideabi"
+            ["ksud-x86_64-linux-android"]="x86_64-linux-android"
+          )
+
+          for artifact in "${!KSUD_TARGETS[@]}"; do
+            target="${KSUD_TARGETS[$artifact]}"
+            artifact_url="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/runs/$run_id/artifacts" --jq ".artifacts[] | select(.name == \"$artifact\") | .archive_download_url" | head -n 1)"
+            if [[ -z "$artifact_url" ]]; then
+              echo "Missing artifact $artifact in SukiSU-Ultra run $run_id." >&2
+              exit 1
+            fi
+
+            mkdir -p "artifacts/$artifact" "target/$target/release"
+            curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "$artifact.zip" "$artifact_url"
+            unzip -q -o "$artifact.zip" -d "artifacts/$artifact"
+
+            ksud_path="$(find "artifacts/$artifact" -type f \( -name ksud -o -name "ksud-*" \) | head -n 1)"
+            if [[ -z "$ksud_path" ]]; then
+              echo "No ksud binary found in artifact $artifact." >&2
+              exit 1
+            fi
+            cp -f "$ksud_path" "target/$target/release/ksud"
+            chmod +x "target/$target/release/ksud"
+          done
+
+          APK_DIR="/tmp/sukisu/manager/app/build/outputs/apk/release"
+          mkdir -p "$APK_DIR"
+          APK_PATH="$(find "$APK_DIR" -type f -name "*.apk" | head -n 1)"
+          if [[ -z "$APK_PATH" ]]; then
+            APK_PATH="$(find /tmp/sukisu/manager -type f -path "*/build/outputs/apk/release/*.apk" | head -n 1)"
+            if [[ -z "$APK_PATH" ]]; then
+              echo "Gradle did not produce a release APK." >&2
+              exit 1
+            fi
+            cp -f "$APK_PATH" "$APK_DIR/"
+          fi
+
+          python3 repack_apk.py repack \
+            -b release \
+            -t release \
+            -a arm64-v8a \
+            -a armeabi-v7a \
+            -a x86_64 \
+            -K "$SPOOF_KEYSTORE" \
+            -A "$SPOOF_KEY_ALIAS" \
+            -P "$SPOOF_KEYSTORE_PASSWORD" \
+            -S "$SPOOF_KEY_PASSWORD" \
+            --strip
+
+          DIST_APK="$(find /tmp/sukisu/dist -type f -name "*.apk" | head -n 1)"
+          if [[ -z "$DIST_APK" ]]; then
+            echo "Repack did not produce a dist APK." >&2
+            exit 1
+          fi
+
+          AAPT_BIN="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          if [[ -z "$AAPT_BIN" ]]; then
+            echo "aapt not found under ANDROID_HOME=$ANDROID_HOME." >&2
+            exit 1
+          fi
+          "$AAPT_BIN" dump badging "$DIST_APK" | grep "package: name='$SPOOF_PKG_NAME'"
+
+          cp -v /tmp/sukisu/dist/*.apk "$GITHUB_WORKSPACE/AnyKernel3/"
 
       - name: Set zip Suffix
         id: suffix

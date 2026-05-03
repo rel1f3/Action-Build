@@ -758,6 +758,17 @@ jobs:
             SHORT_HASH=${MANUAL_HASH:0:8}
           fi
 
+          SUKISU_MANAGER_SOURCE_REF="$(git rev-parse "$MANAGER_BRANCH" 2>/dev/null || git rev-parse "origin/$MANAGER_BRANCH" 2>/dev/null)"
+          SUKISU_MANAGER_SOURCE_COUNT="$(git rev-list --count "$SUKISU_MANAGER_SOURCE_REF" 2>/dev/null || true)"
+          if [[ -z "$SUKISU_MANAGER_SOURCE_REF" || -z "$SUKISU_MANAGER_SOURCE_COUNT" ]]; then
+            echo "Failed to resolve SukiSU manager source ref/count for branch $MANAGER_BRANCH" >&2
+            exit 1
+          fi
+          {
+            echo "SUKISU_MANAGER_SOURCE_REF=$SUKISU_MANAGER_SOURCE_REF"
+            echo "SUKISU_MANAGER_SOURCE_COUNT=$SUKISU_MANAGER_SOURCE_COUNT"
+          } >> "$GITHUB_ENV"
+
           KSU_VERSION_TAG=$(curl -fsSL https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases/latest \
             | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
           if [[ -z "$KSU_VERSION_TAG" || "$(printf '%s\n' "$KSU_VERSION_TAG" "3.1.7" | sort -V | head -n1)" != "3.1.7" ]]; then
@@ -802,7 +813,7 @@ jobs:
             sed -i "s|^KSU_VERSION_API := .*|KSU_VERSION_API := $ESC_KSU_VERSION_TAG|" kernel/Makefile
           fi
 
-          KSU_VERSION=$(expr $(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo 13000) + 37185)
+          KSU_VERSION=$(expr "$SUKISU_MANAGER_SOURCE_COUNT" + 37185)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
 
           echo "::group::最终 Makefile 中版本信息及部分调试结果预览"
@@ -1982,7 +1993,19 @@ jobs:
 
           SUKISU_DIR="$GITHUB_WORKSPACE/.sukisu-manager"
           rm -rf "$SUKISU_DIR"
-          git clone --depth=1 -b main https://github.com/SukiSU-Ultra/SukiSU-Ultra.git "$SUKISU_DIR"
+          git clone -b main https://github.com/SukiSU-Ultra/SukiSU-Ultra.git "$SUKISU_DIR"
+          if [[ -n "${SUKISU_MANAGER_SOURCE_REF:-}" ]]; then
+            git -C "$SUKISU_DIR" checkout "$SUKISU_MANAGER_SOURCE_REF"
+          fi
+
+          MANAGER_COMMIT_COUNT="$(git -C "$SUKISU_DIR" rev-list --count HEAD)"
+          MANAGER_VERSION_CODE="$(expr 40000 + "$MANAGER_COMMIT_COUNT" - 2815)"
+          if [[ -z "${KSUVER:-}" || "$MANAGER_VERSION_CODE" != "$KSUVER" ]]; then
+            echo "Spoofed manager source version ($MANAGER_VERSION_CODE) does not match KernelSU driver version (${KSUVER:-missing})." >&2
+            echo "Manager source ref: $(git -C "$SUKISU_DIR" rev-parse HEAD)" >&2
+            exit 1
+          fi
+          echo "Using SukiSU manager source $(git -C "$SUKISU_DIR" rev-parse --short=12 HEAD), versionCode=$MANAGER_VERSION_CODE"
 
           OLD_PKG="com.sukisu.ultra"
           OLD_PATH="com/sukisu/ultra"
@@ -2078,11 +2101,13 @@ jobs:
           echo "Using Android NDK strip: $STRIP_BIN"
 
           cd "$SUKISU_DIR"
-          run_id="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          manager_head="$(git rev-parse HEAD)"
+          run_id="$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=50" --jq ".workflow_runs[] | select(.head_sha == \"$manager_head\") | .id" | head -n 1)"
           if [[ -z "$run_id" || "$run_id" == "null" ]]; then
-            echo "No successful SukiSU-Ultra build-manager run found on main." >&2
+            echo "No successful SukiSU-Ultra build-manager run found for source $manager_head." >&2
             exit 1
           fi
+          echo "Using SukiSU-Ultra build-manager run $run_id for source $(git rev-parse --short=12 HEAD)"
 
           declare -A KSUD_TARGETS=(
             ["ksud-aarch64-linux-android"]="aarch64-linux-android"

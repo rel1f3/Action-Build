@@ -944,6 +944,212 @@ jobs:
           echo "Patched $APK_SIGN_FILE with spoof cert in apk_sign_keys[]:"
           grep -n "$SPOOF_EXPECTED_HASH" "$APK_SIGN_FILE"
 
+      - name: Patch SukiSU Multi-Manager Coexistence
+        if: ${{ env.SPOOF_EXPECTED_SIZE != '' }}
+        run: |
+          set -euo pipefail
+
+          KSU_DIR="kernel_workspace/kernel_platform/KernelSU"
+          ID_FILE="$KSU_DIR/kernel/manager/manager_identity.h"
+          TRACKER_FILE="$KSU_DIR/kernel/manager/throne_tracker.c"
+
+          if [[ ! -f "$ID_FILE" ]]; then
+            echo "Missing SukiSU manager identity header: $ID_FILE" >&2
+            exit 1
+          fi
+          if [[ ! -f "$TRACKER_FILE" ]]; then
+            echo "Missing SukiSU throne tracker: $TRACKER_FILE" >&2
+            exit 1
+          fi
+
+          python3 - "$ID_FILE" "$TRACKER_FILE" <<'PY'
+          import pathlib
+          import re
+          import sys
+          import textwrap
+
+          id_file = pathlib.Path(sys.argv[1])
+          tracker_file = pathlib.Path(sys.argv[2])
+
+          id_text = id_file.read_text()
+          if "KSU_MANAGER_APPID_SLOTS" not in id_text:
+              old = "#define KSU_PER_USER_RANGE 100000\n\nextern uid_t ksu_manager_appid; // DO NOT DIRECT USE\n"
+              new = (
+                  "#define KSU_PER_USER_RANGE 100000\n"
+                  "#define KSU_MANAGER_APPID_SLOTS 8\n\n"
+                  "extern uid_t ksu_manager_appid; // DO NOT DIRECT USE\n"
+                  "extern uid_t ksu_manager_appids[KSU_MANAGER_APPID_SLOTS]; // Action-Build spoof co-manager slots\n"
+              )
+              if old not in id_text:
+                  raise SystemExit("manager_identity.h layout changed before manager appid declaration")
+              id_text = id_text.replace(old, new, 1)
+
+          replacements = [
+              (
+                  r"static inline bool ksu_is_manager_appid_valid\(void\)\n\{\n\s*return ksu_manager_appid != KSU_INVALID_APPID;\n\}\n",
+                  textwrap.dedent("""\
+                      static inline bool ksu_is_manager_appid_valid(void)
+                      {
+                          int i;
+
+                          if (ksu_manager_appid != KSU_INVALID_APPID)
+                              return true;
+
+                          for (i = 0; i < KSU_MANAGER_APPID_SLOTS; i++) {
+                              if (ksu_manager_appids[i] != KSU_INVALID_APPID)
+                                  return true;
+                          }
+
+                          return false;
+                      }
+                      """),
+              ),
+              (
+                  r"static inline bool is_manager\(void\)\n\{\n\s*return unlikely\(ksu_manager_appid == current_uid\(\)\.val % KSU_PER_USER_RANGE\);\n\}\n",
+                  textwrap.dedent("""\
+                      static inline bool ksu_is_appid_manager(uid_t appid)
+                      {
+                          int i;
+
+                          if (appid == KSU_INVALID_APPID)
+                              return false;
+
+                          if (ksu_manager_appid == appid)
+                              return true;
+
+                          for (i = 0; i < KSU_MANAGER_APPID_SLOTS; i++) {
+                              if (ksu_manager_appids[i] == appid)
+                                  return true;
+                          }
+
+                          return false;
+                      }
+
+                      static inline bool is_manager(void)
+                      {
+                          return unlikely(ksu_is_appid_manager(current_uid().val % KSU_PER_USER_RANGE));
+                      }
+                      """),
+              ),
+              (
+                  r"static inline bool is_uid_manager\(uid_t uid\)\n\{\n\s*return unlikely\(ksu_manager_appid == uid % KSU_PER_USER_RANGE\);\n\}\n",
+                  textwrap.dedent("""\
+                      static inline bool is_uid_manager(uid_t uid)
+                      {
+                          return unlikely(ksu_is_appid_manager(uid % KSU_PER_USER_RANGE));
+                      }
+                      """),
+              ),
+              (
+                  r"static inline void ksu_set_manager_appid\(uid_t appid\)\n\{\n\s*ksu_manager_appid = appid;\n\}\n",
+                  textwrap.dedent("""\
+                      static inline void ksu_set_manager_appid(uid_t appid)
+                      {
+                          int i;
+
+                          if (appid == KSU_INVALID_APPID)
+                              return;
+
+                          if (ksu_manager_appid == KSU_INVALID_APPID)
+                              ksu_manager_appid = appid;
+
+                          for (i = 0; i < KSU_MANAGER_APPID_SLOTS; i++) {
+                              if (ksu_manager_appids[i] == appid)
+                                  return;
+                          }
+
+                          for (i = 0; i < KSU_MANAGER_APPID_SLOTS; i++) {
+                              if (ksu_manager_appids[i] == KSU_INVALID_APPID) {
+                                  ksu_manager_appids[i] = appid;
+                                  return;
+                              }
+                          }
+                      }
+                      """),
+              ),
+              (
+                  r"static inline void ksu_invalidate_manager_uid\(void\)\n\{\n\s*ksu_manager_appid = KSU_INVALID_APPID;\n\}\n",
+                  textwrap.dedent("""\
+                      static inline void ksu_invalidate_manager_uid(void)
+                      {
+                          int i;
+
+                          ksu_manager_appid = KSU_INVALID_APPID;
+                          for (i = 0; i < KSU_MANAGER_APPID_SLOTS; i++)
+                              ksu_manager_appids[i] = KSU_INVALID_APPID;
+                      }
+                      """),
+              ),
+          ]
+
+          for pattern, replacement in replacements:
+              id_text, count = re.subn(pattern, replacement, id_text, count=1)
+              if count != 1 and replacement.strip() not in id_text:
+                  raise SystemExit(f"manager_identity.h layout changed near pattern: {pattern[:60]}")
+
+          id_file.write_text(id_text)
+
+          tracker_text = tracker_file.read_text()
+          tracker_text = tracker_text.replace(
+              "uid_t ksu_manager_appid = KSU_INVALID_APPID;\n",
+              (
+                  "uid_t ksu_manager_appid = KSU_INVALID_APPID;\n"
+                  "uid_t ksu_manager_appids[KSU_MANAGER_APPID_SLOTS] = {\n"
+                  "    [0 ... KSU_MANAGER_APPID_SLOTS - 1] = KSU_INVALID_APPID,\n"
+                  "};\n"
+              ),
+              1,
+          )
+
+          old_block = (
+              "    // first, check if manager_uid exist!\n"
+              "    bool manager_exist = false;\n"
+              "    list_for_each_entry (np, &uid_list, list) {\n"
+              "        if (np->uid == ksu_get_manager_appid()) {\n"
+              "            manager_exist = true;\n"
+              "            break;\n"
+              "        }\n"
+              "    }\n"
+              "\n"
+              "    if (!manager_exist) {\n"
+              "        if (ksu_is_manager_appid_valid()) {\n"
+              "            pr_info(\"manager is uninstalled, invalidate it!\\n\");\n"
+              "            ksu_invalidate_manager_uid();\n"
+              "            goto prune;\n"
+              "        }\n"
+              "        pr_info(\"Searching manager...\\n\");\n"
+              "        search_manager(\"/data/app\", 2, &uid_list);\n"
+              "        pr_info(\"Search manager finished\\n\");\n"
+              "    }\n"
+          )
+          new_block = (
+              "    // Action-Build: rescan signed managers so the official manager and spoof manager can coexist.\n"
+              "    ksu_invalidate_manager_uid();\n"
+              "    pr_info(\"Searching managers...\\n\");\n"
+              "    search_manager(\"/data/app\", 2, &uid_list);\n"
+              "    pr_info(\"Search managers finished\\n\");\n"
+          )
+          if old_block not in tracker_text and new_block not in tracker_text:
+              raise SystemExit("throne_tracker.c layout changed near manager search block")
+          tracker_text = tracker_text.replace(old_block, new_block, 1)
+
+          tracker_text = tracker_text.replace(
+              "            stop = 1;\n",
+              "            /* Action-Build: keep scanning for additional signed manager APKs. */\n",
+              1,
+          )
+
+          if tracker_text.count("uid_t ksu_manager_appids[KSU_MANAGER_APPID_SLOTS]") != 1:
+              raise SystemExit("failed to define exactly one multi-manager appid array")
+          if "Action-Build: keep scanning for additional signed manager APKs" not in tracker_text:
+              raise SystemExit("failed to keep throne tracker scanning after first manager")
+
+          tracker_file.write_text(tracker_text)
+          PY
+
+          echo "Patched SukiSU manager identity for coexistence:"
+          grep -nE 'KSU_MANAGER_APPID_SLOTS|ksu_manager_appids|ksu_is_appid_manager' "$ID_FILE" "$TRACKER_FILE"
+
       - name: Apply Patches SukiSU Ultra
         env:
           FILE: ${{ github.event.inputs.FILE }}

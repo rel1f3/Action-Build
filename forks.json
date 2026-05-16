@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Action-Build",
+    "url": "https://github.com/rel1f3/Action-Build",
+    "defaultBranchRef": {"name": "SukiSU-Ultra"},
+    "parent": {"name": "Action-Build", "nameWithOwner": "Numbersf/Action-Build", "url": "https://github.com/Numbersf/Action-Build", "defaultBranchRef": {"name": "SukiSU-Ultra"}}
+  },
+  {
+    "name": "Build_Lenovo_sm8750",
+    "url": "https://github.com/rel1f3/Build_Lenovo_sm8750",
+    "defaultBranchRef": {"name": "main"},
+    "parent": {"name": "Build_Lenovo_sm8750", "nameWithOwner": "qdykernel/Build_Lenovo_sm8750", "url": "https://github.com/qdykernel/Build_Lenovo_sm8750", "defaultBranchRef": {"name": "main"}}
+  },
+  {
+    "name": "GKI_KernelSU_SUSFS",
+    "url": "https://github.com/rel1f3/GKI_KernelSU_SUSFS",
+    "defaultBranchRef": {"name": "dev"},
+    "parent": {"name": "GKI_KernelSU_SUSFS", "nameWithOwner": "zzh20188/GKI_KernelSU_SUSFS", "url": "https://github.com/zzh20188/GKI_KernelSU_SUSFS", "defaultBranchRef": {"name": "dev"}}
+  },
+  {
+    "name": "RunFilesBuilder",
+    "url": "https://github.com/rel1f3/RunFilesBuilder",
+    "defaultBranchRef": {"name": "master"},
+    "parent": {"name": "RunFilesBuilder", "nameWithOwner": "wukongdaily/RunFilesBuilder", "url": "https://github.com/wukongdaily/RunFilesBuilder", "defaultBranchRef": {"name": "master"}}
+  }
+]

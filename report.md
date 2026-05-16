@@ -6,9 +6,9 @@ Date: 2026-05-16
 ## Summary
 
 - **Total forks**: 4
-- **Total branches processed (across all forks)**: 7
+- **Total branches processed (across all forks)**: 8
 - ✅ **Rebased & pushed**: 1
-- ⏭️ **Skipped**: 2 (1 automation branch held this session's report; 1 stale claude/* on another fork)
+- ⏭️ **Skipped**: 3 (the session work-branch holding this report on Action-Build, one stale claude/* on Action-Build, one stale claude/* on GKI_KernelSU_SUSFS)
 - ❌ **Failed**: 4 (all `push unauthorized in sandbox` — see Environment notes)
 
 ### Failed breakdown by repo
@@ -87,6 +87,7 @@ report).
   - Pre-rebase tip: `2dec5d3 对齐伪装管理器和内核源码版本`
   - Post-rebase tip: `c3eb096 对齐伪装管理器和内核源码版本`
 - `rel1f3/Action-Build/claude/rebase-and-push-0zkmK`: ⏭️ skipped: 自动化分支 (Claude Code session work branch — holds this report).
+- `rel1f3/Action-Build/claude/kernel-manager-config-1aD43`: ⏭️ skipped: 自动化分支 (stale Claude Code session branch from an earlier run).
 
 ### rel1f3/Build_Lenovo_sm8750 (no push credentials)
 

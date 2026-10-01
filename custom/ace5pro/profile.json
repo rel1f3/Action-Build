@@ -1,0 +1,72 @@
+{
+  "device": "oneplus_ace5_pro_b",
+  "kernel_release": "6.6.118-android15-8-g93e223c276e7-abogki500782043-4k",
+  "kernel_version": "6.6.118",
+  "build_timestamp": "Wed Apr  8 15:08:30 UTC 2026",
+  "uts_version": "#1 SMP PREEMPT Wed Apr  8 15:08:30 UTC 2026",
+  "source_pins": {
+    "kernel_platform/common": "78abcdde43de8f811cfe2cfa76d228302cb155bd",
+    "kernel_platform/msm-kernel": "5e9ee92883e72901c014bf9f39bcfac27242a6a2",
+    ".": "48d6e0ff154ed2c63ec35d6b1d807df69e73c636"
+  },
+  "inputs": {
+    "FILE": "oneplus_ace5_pro_b",
+    "SUSFS_CI": "N/A",
+    "KPM": "KPM",
+    "SUSFS_META": "eba2a88a5ba303e3d79d08e0717b956e9cf784a1",
+    "DYNAMIC_REPO": "Numbersf",
+    "BUILD_TIME": "-1",
+    "KSU_META": "904c60d18f026340ce38ca2d5a1da529aadcba1a/builtin//b20dee702035af09cb2ecb5f35443bbc1747f3e6",
+    "LZ4_UPDATE": "false",
+    "ZRAM": "0/lz4kd/8589934592",
+    "SUFFIX": "-1",
+    "RESUBLEVEL": "",
+    "FAST_BUILD": "false",
+    "LSM_BBG": "false",
+    "NETFILTER": "false",
+    "CCM": "false",
+    "UNICODE_BYPASS": "true",
+    "SCHED_HMBIRD": "true",
+    "DROID_SPACES": "false",
+    "RE_KERNEL": "false",
+    "SUSFS_DEV": "false",
+    "SPACE_NOCLEAN": "false",
+    "BUILD_NOCACHE": "false"
+  },
+  "patch_pins": {
+    "SukiSU_patch": "547ae94bcaec53d030398f857950c64662043a5d",
+    "SCHED_PATCH": "26e3774a9794e9728a3cc6840f01527de5536eca",
+    "AnyKernel3": "47f23f7ece3ef212a392ec9ea5466e5f0b55d3c7"
+  },
+  "upstream_commit": "1769d3eb8e81497df0990d2aceb8ad761ff50a82",
+  "builtin_sha": "b20dee702035af09cb2ecb5f35443bbc1747f3e6",
+  "manager_source_sha": "904c60d18f026340ce38ca2d5a1da529aadcba1a",
+  "manager_version": 40900,
+  "kernel_uapi": 2,
+  "driver_build_id": 40900,
+  "package": "com.yek.android.kfc.activitys",
+  "certificate_der_size": 990,
+  "certificate_sha256": "5fa0f54c13dfa9164f91b77745964facd2ba58a40f49d7b2a53d9452f2a40f7e",
+  "kpm_patcher_sha256": "1bd00563e9d8fbbd11a16c0c1c59c5add406e6c5c92557def50f93d6f0aebe2d",
+  "manager_artifact": {
+    "verified": true,
+    "manifest_json": "{\n  \"schema_version\": 1,\n  \"application_id\": \"com.yek.android.kfc.activitys\",\n  \"manager_version_code\": 40900,\n  \"manager_uapi_version\": 2,\n  \"source_adaptations\": [\n    \"Kernel-SU dependency URLs relocated to KernelSU2; locked commit IDs unchanged\"\n  ],\n  \"manager_source_repository\": \"SukiSU-Ultra/SukiSU-Ultra\",\n  \"manager_source_sha\": \"904c60d18f026340ce38ca2d5a1da529aadcba1a\",\n  \"kernel_auth_sha\": null,\n  \"kernel_candidate_source_sha\": \"b20dee702035af09cb2ecb5f35443bbc1747f3e6\",\n  \"kernel_pairing_verified\": false,\n  \"root_authorization_tested\": false,\n  \"device_kernel_tested\": false,\n  \"pairing_status\": \"pending-builtin-authentication-and-device-verification\",\n  \"build_run_id\": \"36837509535\",\n  \"mode\": \"builtin-only\",\n  \"apk_signing_schemes\": [\n    \"v2\"\n  ],\n  \"certificate_der_size\": 990,\n  \"certificate_sha256\": \"5fa0f54c13dfa9164f91b77745964facd2ba58a40f49d7b2a53d9452f2a40f7e\",\n  \"apk_sha256\": \"a7adbd841ffbdb5868e99b738a444f9bd6f6934dac753cef52fd4da18eef84c0\"\n}\n",
+    "manifest_sha256": "4ed950f5f16c5b6a676d4a4b4e7555f94cad2be36ed0e6c3cbc5117717fa3ca8",
+    "apk_sha256": "a7adbd841ffbdb5868e99b738a444f9bd6f6934dac753cef52fd4da18eef84c0",
+    "run_id": 36837509535,
+    "artifact_id": 11150139086,
+    "artifact_url": "https://github.com/rel1f3/SukiSU-Manager-Build/actions/runs/36837509535/artifacts/11150139086",
+    "workflow_commit": "9608112fb243b72557aeb017d09e8c8ecc7af1db",
+    "artifact_zip_sha256": "75280f48429cbf53f2a8fed0909bd971e6b6464afc25c2901582bd11a9ca9676",
+    "smoke": {
+      "android_api": 36,
+      "architecture": "x86_64",
+      "install_passed": true,
+      "launch_status": "ok",
+      "pid_after_30_seconds": 2151,
+      "fatal_exception_found": false,
+      "root_authorization_tested": false,
+      "device_kernel_tested": false
+    }
+  }
+}

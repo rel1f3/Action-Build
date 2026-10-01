@@ -1,0 +1,40 @@
+name: Isolated final Image runtime verification
+on:
+  push:
+    branches: [validation/ace5pro-final-36849458473]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Wait for exact kernel build and download its final artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          timeout 5400 gh run watch 36849458473 --repo rel1f3/Action-Build --exit-status --interval 30
+          gh run download 36849458473 --repo rel1f3/Action-Build --dir artifact
+      - name: Install emulator and cross compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-arm gcc-aarch64-linux-gnu libc6-dev-arm64-cross kotlin
+      - name: Build inert disposable KPM and userspace
+        run: |
+          aarch64-linux-gnu-gcc -static -O2 -Wall -Wextra validation40900/test-init.c -o test-init
+          aarch64-linux-gnu-gcc -c -O2 -fno-pic -fno-stack-protector -ffreestanding validation40900/probe.c -o probe.kpm
+          python3 validation40900/make_initramfs.py
+          kotlinc validation40900/ExactManagerGate.kt -include-runtime -d exact-manager-gate.jar
+      - name: Verify exact post-KPM Image with real UAPI2 and loading tests
+        run: python3 validation40900/run.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-image-runtime-${{ github.run_id }}
+          path: test-results
+          if-no-files-found: warn
+          retention-days: 30

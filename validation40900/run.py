@@ -23,13 +23,16 @@ for attempt,(cpus,seconds) in enumerate(((1,30),(4,60),(8,60),(4,30)),1):
  passed=code==0 and all(s in log for s in required) and not any(s in log for s in forbidden)
  full_matches=re.findall(rb'KSU_FULL_VERSION=([^\r\n]+)',log)
  native_full=full_matches[0].decode('ascii') if len(full_matches)==1 else ''
+ info_matches=re.findall(rb'KSU_INFO version=(\d+) flags=(\d+) features=(\d+) uapi=(\d+)',log)
+ observed_version=int(info_matches[0][0]) if len(info_matches)==1 else None
+ observed_uapi=int(info_matches[0][3]) if len(info_matches)==1 else None
  gate_passed=False
- if native_full and native_full==provenance['kernel_full_version']:
-  gate=subprocess.run(['java','-jar','exact-manager-gate.jar',native_full,'40900','2'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+ if native_full and native_full==provenance['kernel_full_version'] and observed_version is not None and observed_uapi is not None:
+  gate=subprocess.run(['java','-jar','exact-manager-gate.jar',native_full,str(observed_version),str(observed_uapi)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
   (out/f'exact-manager-gate-{attempt}.log').write_bytes(gate.stdout);print(gate.stdout.decode(errors='replace'))
   gate_passed=gate.returncode==0 and b'EXACT_MANAGER_GATE_PASS' in gate.stdout
  passed=passed and gate_passed
- results.append(dict(native_full_version=native_full,manager_version_gate_passed=gate_passed,attempt=attempt,cpus=cpus,stress_seconds=seconds,exit_code=code,passed=passed,command=cmd));print(log.decode(errors='replace')[-12000:])
-report=dict(build_run_id=36849458473,image_sha256=digest,image_modified=False,kernel_uapi=2,driver_version=40900,builtin_sha=provenance['builtin_sha'],final_kpm_image=True,tests=results,driver_runtime_verified=all(r['passed'] for r in results),manager_version_gate_verified=all(r['manager_version_gate_passed'] for r in results),qemu_passed=all(r['passed'] for r in results),device_boot_tested=False,display_tested=False,vendor_module_abi_tested=False,android_framework_tested=False,manager_root_authorization_tested=False,unsupported_builtin_ioctl=[104,105],selinux_hide_changed=False)
+ results.append(dict(observed_driver_version=observed_version,observed_kernel_uapi=observed_uapi,native_full_version=native_full,manager_version_gate_passed=gate_passed,attempt=attempt,cpus=cpus,stress_seconds=seconds,exit_code=code,passed=passed,command=cmd));print(log.decode(errors='replace')[-12000:])
+report=dict(build_run_id=36849458473,image_sha256=digest,image_modified=False,kernel_uapi=results[0]['observed_kernel_uapi'],driver_version=results[0]['observed_driver_version'],builtin_sha=provenance['builtin_sha'],final_kpm_image=True,tests=results,driver_runtime_verified=all(r['passed'] for r in results),manager_version_gate_verified=all(r['manager_version_gate_passed'] for r in results),qemu_passed=all(r['passed'] for r in results),device_boot_tested=False,display_tested=False,vendor_module_abi_tested=False,android_framework_tested=False,manager_root_authorization_tested=False,unsupported_builtin_ioctl=[104,105],selinux_hide_changed=False)
 (out/'result.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if not report['qemu_passed']:raise SystemExit('builtin UAPI2/final KPM runtime validation failed; inspect logs')
